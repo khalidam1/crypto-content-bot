@@ -22,8 +22,8 @@ export async function generateContent({ coin, sentiment, news, social, apiKey })
 
   // بناء سياق الأخبار
   const newsContext = news?.length
-    ? `\nRecent news:\n${news.map(n => `- ${n.title} (${n.sentiment})`).join('\n')}`
-    : '';
+    ? `\nRecent news provided:\n${news.map(n => `- ${n.title} (${n.sentiment})`).join('\n')}`
+    : '\nINTERNAL_ACTION: Search for recent news about this coin to inform your analysis.';
 
   // بناء سياق السوشيال
   // FIX 6: كان يفترض socialVolume موجود دائماً — أضفنا optional chaining
@@ -113,16 +113,6 @@ function buildFallback(coin, sentiment) {
   const abs    = Math.abs(coin.change24h).toFixed(2);
   const volume = (coin.volume24h / 1_000_000).toFixed(0);
 
-  return `Is this ${coin.symbol} move the real deal or a trap? ${arrow}
-
-${coin.symbol} is ${move} ${abs}% in the last 24 hours with $${volume}M in volume. ` +
-`Market sentiment sits at ${sentiment.value}/100 — ${sentiment.signal}.
-
-Bullish case: if volume sustains and buyers hold key levels, we could see continuation toward new highs.
-
-Bearish case: moves without strong fundamentals often retrace. Watch the volume closely — if it dries up, a pullback is likely.
-
-The market is sending mixed signals right now. What's your read — is ${coin.symbol} ready to run or is this a fakeout?
-
-⚠️ Not financial advice. Always DYOR.`;
+  return `Is this ${coin.symbol} move the real deal or a trap? ${arrow}\n\n${coin.symbol} is ${move} ${abs}% in the last 24 hours with $${volume}M in volume. ` +
+`Market sentiment sits at ${sentiment.value}/100 — ${sentiment.signal}.\n\nBullish case: if volume sustains and buyers hold key levels, we could see continuation toward new highs.\n\nBearish case: moves without strong fundamentals often retrace. Watch the volume closely — if it dries up, a pullback is likely.\n\nThe market is sending mixed signals right now. What's your read — is ${coin.symbol} ready to run or is this a fakeout?\n\n⚠️ Not financial advice. Always DYOR.`;
 }
