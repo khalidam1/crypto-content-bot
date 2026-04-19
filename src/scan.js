@@ -8,7 +8,6 @@ import { logger } from './logger.js';
 
 const FOCUS_COINS = CONFIG.FOCUS_COINS;
 
-// FIX 1: Timeout helper — بدونه قد يتجمد Cloudflare Worker
 async function fetchWithTimeout(url, options = {}, ms = 8000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
@@ -24,17 +23,27 @@ async function fetchWithTimeout(url, options = {}, ms = 8000) {
 // Binance: سعر + حجم + تغير 24 ساعة
 // ─────────────────────────────────────────
 async function fetchBinance() {
+  const url = 'https://data.binance.com/api/v3/ticker/24hr';
+  logger.info(`Attempting to fetch from Binance: ${url}`);
   try {
-    // FIX 5: Use data.binance.com endpoint to avoid geo-blocking (HTTP 451 error)
     const res = await fetchWithTimeout(
-      'https://data.binance.com/api/v3/ticker/24hr',
+      url,
       { headers: { 'User-Agent': 'CryptoBot/1.0' } }
     );
 
-    if (!res.ok) throw new Error(`Binance HTTP ${res.status}`);
-    const data = await res.json();
+    logger.info(`Binance response status: ${res.status}`);
 
-    // FIX 2: MATIC أصبح POL على Binance في 2024 — نعالج الاثنين
+    if (!res.ok) {
+      const errorBody = await res.text();
+      logger.error('Binance response was not OK', {
+        status: res.status,
+        headers: JSON.stringify(res.headers.raw()), // Log all headers
+        body: errorBody,
+      });
+      throw new Error(`Binance HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
     const SYMBOL_MAP = { 'POL': 'MATIC' };
 
     return data
@@ -45,24 +54,27 @@ async function fetchBinance() {
         return FOCUS_COINS.includes(sym);
       })
       .map(c => {
-        const raw    = c.symbol.replace('USDT', '');
+        const raw = c.symbol.replace('USDT', '');
         const symbol = SYMBOL_MAP[raw] || raw;
         return {
           symbol,
-          price:     parseFloat(c.lastPrice),
+          price: parseFloat(c.lastPrice),
           change24h: parseFloat(c.priceChangePercent),
           volume24h: parseFloat(c.quoteVolume),
-          high24h:   parseFloat(c.highPrice),
-          low24h:    parseFloat(c.lowPrice),
+          high24h: parseFloat(c.highPrice),
+          low24h: parseFloat(c.lowPrice),
         };
       })
       .filter(c => c.price > 0 && c.volume24h > 0);
 
   } catch (err) {
-    logger.error('Binance fetch failed', { error: err.message });
+    // Log the specific error message from the thrown error
+    logger.error('Binance fetch failed in catch block', { error: err.message, stack: err.stack });
     return [];
   }
 }
+
+// Other functions remain the same...
 
 // ─────────────────────────────────────────
 // CoinGecko: market cap + تغير 7 أيام + rank
@@ -78,7 +90,6 @@ async function fetchCoinGecko() {
       headers: { 'User-Agent': 'CryptoBot/1.0' }
     });
 
-    // FIX 3: CoinGecko يُرجع 429 عند تجاوز Rate Limit — نتعامل معه
     if (res.status === 429) {
       logger.warn('CoinGecko rate limit hit — skipping gecko data');
       return {};
@@ -125,7 +136,6 @@ async function fetchTrending(cmcApiKey) {
     );
 
     if (!res.ok) {
-      // Enhanced logging for CMC
       const errorBody = await res.text();
       logger.error('CMC fetch failed', { status: res.status, body: errorBody });
       return [];
@@ -151,9 +161,8 @@ export async function getMarketData(cmcApiKey) {
     fetchTrending(cmcApiKey)
   ]);
 
-  // FIX 4: إذا فشل Binance الكل يفشل — نتأكد من وجود بيانات
-  if (!binanceCoins.length) {
-    logger.error('No Binance data — cannot continue');
+  if (!binanceCoins || binanceCoins.length === 0) {
+    logger.error('No Binance data was processed. Cannot continue.');
     return [];
   }
 
