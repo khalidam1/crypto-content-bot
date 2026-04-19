@@ -1,6 +1,6 @@
 // ============================================================
 // scan.js — جلب بيانات السوق
-// المصادر: Binance + CoinGecko + CoinMarketCap
+// المصدر الأساسي: CoinGecko
 // ============================================================
 
 import { CONFIG } from './config.js';
@@ -20,157 +20,117 @@ async function fetchWithTimeout(url, options = {}, ms = 8000) {
 }
 
 // ─────────────────────────────────────────
-// Binance: سعر + حجم + تغير 24 ساعة
+// CoinGecko: مصدر البيانات الأساسي لكل شيء
 // ─────────────────────────────────────────
-async function fetchBinance() {
-  // FINAL FIX: Use a resilient, non-geoblocked public endpoint (api3)
-  const url = 'https://api3.binance.com/api/v3/ticker/24hr';
-  logger.info(`Attempting to fetch from Binance: ${url}`);
+async function fetchCoinGeckoData() {
+  const ids = FOCUS_COINS.join(',').toLowerCase(); // CoinGecko uses IDs
+  logger.info(`Attempting to fetch from CoinGecko for: ${ids}`);
+
   try {
-    const res = await fetchWithTimeout(
-      url,
-      { headers: { 'User-Agent': 'CryptoBot/1.0' } }
-    );
+    // Construct the URL to get all data in one call
+    const url = new URL('https://api.coingecko.com/api/v3/coins/markets');
+    url.searchParams.append('vs_currency', 'usd');
+    url.searchParams.append('order', 'market_cap_desc');
+    url.searchParams.append('per_page', '50');
+    url.searchParams.append('price_change_percentage', '24h,7d');
 
-    if (!res.ok) {
-      const errorBody = await res.text();
-      // FINAL FIX: Corrected the logging to be compatible with Node.js environment
-      const headers = Object.fromEntries(res.headers.entries());
-      logger.error('Binance response was not OK', {
-        status: res.status,
-        headers: headers,
-        body: errorBody,
-      });
-      throw new Error(`Binance HTTP ${res.status}`);
-    }
+    // We need to map our Symbols (BTC) to CoinGecko IDs (bitcoin)
+    // This is a small, hardcoded map for our focus coins.
+    const SYMBOL_TO_ID_MAP = {
+      'BTC': 'bitcoin', 'ETH': 'ethereum', 'SOL': 'solana', 'BNB': 'binancecoin',
+      'XRP': 'ripple', 'ADA': 'cardano', 'AVAX': 'avalanche-2', 'DOGE': 'dogecoin',
+      'DOT': 'polkadot', 'LINK': 'chainlink', 'MATIC': 'matic-network', 'UNI': 'uniswap',
+      'ATOM': 'cosmos', 'LTC': 'litecoin', 'NEAR': 'near'
+    };
+    const idList = FOCUS_COINS.map(s => SYMBOL_TO_ID_MAP[s]).join(',');
+    url.searchParams.append('ids', idList);
 
-    const data = await res.json();
-    const SYMBOL_MAP = { 'POL': 'MATIC' };
 
-    return data
-      .filter(c => {
-        if (!c.symbol.endsWith('USDT')) return false;
-        const raw = c.symbol.replace('USDT', '');
-        const sym = SYMBOL_MAP[raw] || raw;
-        return FOCUS_COINS.includes(sym);
-      })
-      .map(c => {
-        const raw = c.symbol.replace('USDT', '');
-        const symbol = SYMBOL_MAP[raw] || raw;
-        return {
-          symbol,
-          price: parseFloat(c.lastPrice),
-          change24h: parseFloat(c.priceChangePercent),
-          volume24h: parseFloat(c.quoteVolume),
-          high24h: parseFloat(c.highPrice),
-          low24h: parseFloat(c.lowPrice),
-        };
-      })
-      .filter(c => c.price > 0 && c.volume24h > 0);
-
-  } catch (err) {
-    logger.error('Binance fetch failed in catch block', { error: err.message, stack: err.stack });
-    return [];
-  }
-}
-
-// Other functions remain the same...
-
-// ─────────────────────────────────────────
-// CoinGecko: market cap + تغير 7 أيام + rank
-// ─────────────────────────────────────────
-async function fetchCoinGecko() {
-  try {
-    const url =
-      'https://api.coingecko.com/api/v3/coins/markets' +
-      '?vs_currency=usd&order=market_cap_desc&per_page=50&page=1' +
-      '&price_change_percentage=7d';
-
-    const res = await fetchWithTimeout(url, {
+    const res = await fetchWithTimeout(url.toString(), {
       headers: { 'User-Agent': 'CryptoBot/1.0' }
     });
 
-    if (res.status === 429) {
-      logger.warn('CoinGecko rate limit hit — skipping gecko data');
-      return {};
+    if (!res.ok) {
+      logger.error('CoinGecko response was not OK', { status: res.status });
+      throw new Error(`CoinGecko HTTP ${res.status}`);
     }
-    if (!res.ok) throw new Error(`CoinGecko HTTP ${res.status}`);
 
     const data = await res.json();
-    if (!Array.isArray(data)) return {};
+    if (!Array.isArray(data)) {
+        logger.error('CoinGecko returned non-array data', { data });
+        return [];
+    }
 
-    const geckoMap = {};
-    data.forEach(coin => {
-      const sym = coin.symbol.toUpperCase();
-      if (FOCUS_COINS.includes(sym)) {
-        geckoMap[sym] = {
-          marketCap: coin.market_cap || 0,
-          change7d:  coin.price_change_percentage_7d_in_currency || 0,
-          rank:      coin.market_cap_rank || 99,
-        };
-      }
-    });
+    return data.map(coin => ({
+      symbol: coin.symbol.toUpperCase(),
+      price: coin.current_price || 0,
+      change24h: coin.price_change_percentage_24h_in_currency || 0,
+      change7d: coin.price_change_percentage_7d_in_currency || 0,
+      volume24h: coin.total_volume || 0,
+      high24h: coin.high_24h || 0,
+      low24h: coin.low_24h || 0,
+      marketCap: coin.market_cap || 0,
+      rank: coin.market_cap_rank || 99,
+    })).filter(c => c.price > 0 && c.volume24h > 0);
 
-    return geckoMap;
   } catch (err) {
-    logger.error('CoinGecko fetch failed', { error: err.message });
-    return {};
+    logger.error('CoinGecko fetch failed', { error: err.message, stack: err.stack });
+    return []; // Return empty on failure
   }
 }
 
 // ─────────────────────────────────────────
-// CoinMarketCap: trending coins
+// CoinMarketCap: trending coins (لا يزال مفيدًا)
 // ─────────────────────────────────────────
 async function fetchTrending(cmcApiKey) {
-  if (!cmcApiKey) return [];
-
-  try {
-    const res = await fetchWithTimeout(
-      'https://pro-api.coinmarketcap.com/v1/cryptocurrency/trending/gainers-losers?limit=10',
-      {
-        headers: {
-          'X-CMC_PRO_API_KEY': cmcApiKey,
-          'User-Agent': 'CryptoBot/1.0'
+    if (!cmcApiKey) return [];
+  
+    try {
+      const res = await fetchWithTimeout(
+        'https://pro-api.coinmarketcap.com/v1/cryptocurrency/trending/gainers-losers?limit=10',
+        {
+          headers: {
+            'X-CMC_PRO_API_KEY': cmcApiKey,
+            'User-Agent': 'CryptoBot/1.0'
+          }
         }
-      }
-    );
-
-    if (!res.ok) {
-      const errorBody = await res.text();
-      logger.error('CMC fetch failed', { status: res.status, body: errorBody });
+      );
+  
+      if (!res.ok) {
+        // Don't treat this as a fatal error, just log it.
+        logger.warn('CMC fetch failed, proceeding without trending data.', { status: res.status });
+        return [];
+      } 
+  
+      const data = await res.json();
+      const trending = data?.data?.gainers || [];
+  
+      return trending.map(c => c.symbol).filter(s => FOCUS_COINS.includes(s));
+    } catch (err) {
+      logger.warn('CMC fetch failed', { error: err.message });
       return [];
-    } 
-
-    const data = await res.json();
-    const trending = data?.data?.gainers || [];
-
-    return trending.map(c => c.symbol).filter(s => FOCUS_COINS.includes(s));
-  } catch (err) {
-    logger.error('CMC fetch failed', { error: err.message });
-    return [];
-  }
+    }
 }
+  
 
 // ─────────────────────────────────────────
 // الدالة الرئيسية: دمج كل البيانات
 // ─────────────────────────────────────────
 export async function getMarketData(cmcApiKey) {
-  const [binanceCoins, geckoMap, trendingList] = await Promise.all([
-    fetchBinance(),
-    fetchCoinGecko(),
+  logger.info('Fetching data from primary source: CoinGecko');
+  const [coins, trendingList] = await Promise.all([
+    fetchCoinGeckoData(),
     fetchTrending(cmcApiKey)
   ]);
 
-  if (!binanceCoins || binanceCoins.length === 0) {
-    logger.error('No Binance data was processed. Cannot continue.');
+  if (!coins || coins.length === 0) {
+    logger.error('No data was processed from CoinGecko. Cannot continue.');
     return [];
   }
 
-  return binanceCoins.map(coin => ({
+  // Add the 'isTrending' flag to the coin data
+  return coins.map(coin => ({
     ...coin,
-    marketCap:  geckoMap[coin.symbol]?.marketCap || 0,
-    change7d:   geckoMap[coin.symbol]?.change7d  || 0,
-    rank:       geckoMap[coin.symbol]?.rank       || 99,
     isTrending: trendingList.includes(coin.symbol)
   }));
 }
