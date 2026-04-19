@@ -19,32 +19,30 @@ async function fetchWithTimeout(url, options = {}, ms = 8000) {
   }
 }
 
+// We need to map our Symbols (BTC) to CoinGecko IDs (bitcoin)
+// This is a small, hardcoded map for our focus coins.
+const SYMBOL_TO_ID_MAP = {
+  'BTC': 'bitcoin', 'ETH': 'ethereum', 'SOL': 'solana', 'BNB': 'binancecoin',
+  'XRP': 'ripple', 'ADA': 'cardano', 'AVAX': 'avalanche-2', 'DOGE': 'dogecoin',
+  'DOT': 'polkadot', 'LINK': 'chainlink', 'MATIC': 'matic-network', 'UNI': 'uniswap',
+  'ATOM': 'cosmos', 'LTC': 'litecoin', 'NEAR': 'near'
+};
+
 // ─────────────────────────────────────────
 // CoinGecko: مصدر البيانات الأساسي لكل شيء
 // ─────────────────────────────────────────
 async function fetchCoinGeckoData() {
-  const ids = FOCUS_COINS.join(',').toLowerCase(); // CoinGecko uses IDs
-  logger.info(`Attempting to fetch from CoinGecko for: ${ids}`);
+  logger.info(`Attempting to fetch from CoinGecko for: ${FOCUS_COINS.join(',')}`);
 
   try {
-    // Construct the URL to get all data in one call
     const url = new URL('https://api.coingecko.com/api/v3/coins/markets');
     url.searchParams.append('vs_currency', 'usd');
     url.searchParams.append('order', 'market_cap_desc');
     url.searchParams.append('per_page', '50');
     url.searchParams.append('price_change_percentage', '24h,7d');
-
-    // We need to map our Symbols (BTC) to CoinGecko IDs (bitcoin)
-    // This is a small, hardcoded map for our focus coins.
-    const SYMBOL_TO_ID_MAP = {
-      'BTC': 'bitcoin', 'ETH': 'ethereum', 'SOL': 'solana', 'BNB': 'binancecoin',
-      'XRP': 'ripple', 'ADA': 'cardano', 'AVAX': 'avalanche-2', 'DOGE': 'dogecoin',
-      'DOT': 'polkadot', 'LINK': 'chainlink', 'MATIC': 'matic-network', 'UNI': 'uniswap',
-      'ATOM': 'cosmos', 'LTC': 'litecoin', 'NEAR': 'near'
-    };
-    const idList = FOCUS_COINS.map(s => SYMBOL_TO_ID_MAP[s]).join(',');
+    
+    const idList = FOCUS_COINS.map(s => SYMBOL_TO_ID_MAP[s]).filter(Boolean).join(',');
     url.searchParams.append('ids', idList);
-
 
     const res = await fetchWithTimeout(url.toString(), {
       headers: { 'User-Agent': 'CryptoBot/1.0' }
@@ -62,6 +60,7 @@ async function fetchCoinGeckoData() {
     }
 
     return data.map(coin => ({
+      id: coin.id, // ID is crucial for historical data
       symbol: coin.symbol.toUpperCase(),
       price: coin.current_price || 0,
       change24h: coin.price_change_percentage_24h_in_currency || 0,
@@ -75,7 +74,7 @@ async function fetchCoinGeckoData() {
 
   } catch (err) {
     logger.error('CoinGecko fetch failed', { error: err.message, stack: err.stack });
-    return []; // Return empty on failure
+    return [];
   }
 }
 
@@ -88,16 +87,10 @@ async function fetchTrending(cmcApiKey) {
     try {
       const res = await fetchWithTimeout(
         'https://pro-api.coinmarketcap.com/v1/cryptocurrency/trending/gainers-losers?limit=10',
-        {
-          headers: {
-            'X-CMC_PRO_API_KEY': cmcApiKey,
-            'User-Agent': 'CryptoBot/1.0'
-          }
-        }
+        { headers: { 'X-CMC_PRO_API_KEY': cmcApiKey, 'User-Agent': 'CryptoBot/1.0' } }
       );
   
       if (!res.ok) {
-        // Don't treat this as a fatal error, just log it.
         logger.warn('CMC fetch failed, proceeding without trending data.', { status: res.status });
         return [];
       } 
@@ -111,7 +104,39 @@ async function fetchTrending(cmcApiKey) {
       return [];
     }
 }
+
+/**
+ * Fetches 14 days of OHLC data for a given CoinGecko coin ID.
+ * @param {string} coinId The coin ID (e.g., 'bitcoin').
+ * @returns {Promise<number[][] | null>} A promise that resolves to an array of [timestamp, open, high, low, close] or null.
+ */
+export async function getHistoricalData(coinId) {
+  if (!coinId) {
+    logger.warn('No coinId provided to getHistoricalData');
+    return null;
+  }
   
+  logger.info(`Fetching historical OHLC data for ${coinId}`);
+  const url = `https://api.coingecko.com/api/v3/coins/${coinId}/ohlc?vs_currency=usd&days=14`;
+
+  try {
+    const res = await fetchWithTimeout(url, { headers: { 'User-Agent': 'CryptoBot/1.0' } });
+    if (!res.ok) {
+      logger.error(`Failed to fetch historical data for ${coinId}`, { status: res.status });
+      return null;
+    }
+    const ohlcData = await res.json();
+    if (!Array.isArray(ohlcData) || ohlcData.length === 0) {
+      logger.warn(`No historical data returned for ${coinId}`);
+      return null;
+    }
+    return ohlcData;
+  } catch (err) {
+    logger.error(`Error fetching historical data for ${coinId}`, { error: err.message });
+    return null;
+  }
+}
+
 
 // ─────────────────────────────────────────
 // الدالة الرئيسية: دمج كل البيانات
@@ -128,7 +153,6 @@ export async function getMarketData(cmcApiKey) {
     return [];
   }
 
-  // Add the 'isTrending' flag to the coin data
   return coins.map(coin => ({
     ...coin,
     isTrending: trendingList.includes(coin.symbol)

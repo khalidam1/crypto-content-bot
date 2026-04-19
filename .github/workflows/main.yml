@@ -1,25 +1,28 @@
 name: Generate Crypto Content
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # Allows manual runs
   schedule:
-    - cron: '0 */6 * * *'
+    - cron: '0 */6 * * *' # Runs every 6 hours
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: '20' # Temporarily keep 20 for stability, will update to 24 if needed.
+          node-version: '20'
+
       - name: Install dependencies
         run: npm install
-      - name: Run script
+
+      - name: Run bot
         run: npm start
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          CMC_API_KEY: ${{ secrets.CMC_API_KEY }}
-          CRYPTOPANIC_API_KEY: ${{ secrets.CRYPTOPANIC_API_KEY }}
-          LUNARCRUSH_API_KEY: ${{ secrets.LUNARCRUSH_API_KEY }}
+          CMC_PRO_API_KEY: ${{ secrets.CMC_PRO_API_KEY }}
