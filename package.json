@@ -1,0 +1,14 @@
+{
+  "name": "crypto-content-bot",
+  "version": "2.0.0",
+  "description": "Crypto Content Intelligence Bot for Binance Square",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/worker.js",
+    "dev": "echo \"Running in dev mode is no longer supported. Use 'npm start' with a .env file.\" && exit 1"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}
