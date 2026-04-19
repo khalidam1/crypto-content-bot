@@ -19,7 +19,8 @@ export const CONFIG = {
 
   // ── حد أدنى للـ Viral Score ──
   // إذا كان أقل من هذا، البوت لا يرسل
-  MIN_VIRAL_SCORE: 35,
+  // Set to 0 for testing to force a message
+  MIN_VIRAL_SCORE: 0,
 
   // ── حد أدنى لحجم التداول ──
   // عملات بحجم أقل من هذا يتم تجاهلها
