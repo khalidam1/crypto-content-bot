@@ -19,12 +19,11 @@ export const CONFIG = {
 
   // ── حد أدنى للـ Viral Score ──
   // إذا كان أقل من هذا، البوت لا يرسل
-  // Set to 0 for testing to force a message
-  MIN_VIRAL_SCORE: 0,
+  MIN_VIRAL_SCORE: 35,
 
   // ── حد أدنى لحجم التداول ──
-  // عملات بحجم أقل من هذا يتم تجاهلها
-  MIN_VOLUME_USD: 20_000_000,
+  // عملات بحجم أقل من هذا يتم تجاهلها. تم تخفيضه لضمان وجود بيانات.
+  MIN_VOLUME_USD: 1_000_000,
 
   // ── إعدادات Gemini ──
   GEMINI: {
