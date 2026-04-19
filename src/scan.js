@@ -23,7 +23,8 @@ async function fetchWithTimeout(url, options = {}, ms = 8000) {
 // Binance: سعر + حجم + تغير 24 ساعة
 // ─────────────────────────────────────────
 async function fetchBinance() {
-  const url = 'https://data.binance.com/api/v3/ticker/24hr';
+  // FINAL FIX: Use a resilient, non-geoblocked public endpoint (api3)
+  const url = 'https://api3.binance.com/api/v3/ticker/24hr';
   logger.info(`Attempting to fetch from Binance: ${url}`);
   try {
     const res = await fetchWithTimeout(
@@ -31,13 +32,13 @@ async function fetchBinance() {
       { headers: { 'User-Agent': 'CryptoBot/1.0' } }
     );
 
-    logger.info(`Binance response status: ${res.status}`);
-
     if (!res.ok) {
       const errorBody = await res.text();
+      // FINAL FIX: Corrected the logging to be compatible with Node.js environment
+      const headers = Object.fromEntries(res.headers.entries());
       logger.error('Binance response was not OK', {
         status: res.status,
-        headers: JSON.stringify(res.headers.raw()), // Log all headers
+        headers: headers,
         body: errorBody,
       });
       throw new Error(`Binance HTTP ${res.status}`);
@@ -68,7 +69,6 @@ async function fetchBinance() {
       .filter(c => c.price > 0 && c.volume24h > 0);
 
   } catch (err) {
-    // Log the specific error message from the thrown error
     logger.error('Binance fetch failed in catch block', { error: err.message, stack: err.stack });
     return [];
   }
