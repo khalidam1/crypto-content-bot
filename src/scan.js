@@ -25,8 +25,9 @@ async function fetchWithTimeout(url, options = {}, ms = 8000) {
 // ─────────────────────────────────────────
 async function fetchBinance() {
   try {
+    // FIX 5: Use data.binance.com endpoint to avoid geo-blocking (HTTP 451 error)
     const res = await fetchWithTimeout(
-      'https://api.binance.com/api/v3/ticker/24hr',
+      'https://data.binance.com/api/v3/ticker/24hr',
       { headers: { 'User-Agent': 'CryptoBot/1.0' } }
     );
 
@@ -123,7 +124,13 @@ async function fetchTrending(cmcApiKey) {
       }
     );
 
-    if (!res.ok) throw new Error(`CMC HTTP ${res.status}`);
+    if (!res.ok) {
+      // Enhanced logging for CMC
+      const errorBody = await res.text();
+      logger.error('CMC fetch failed', { status: res.status, body: errorBody });
+      return [];
+    } 
+
     const data = await res.json();
     const trending = data?.data?.gainers || [];
 
